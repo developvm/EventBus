@@ -20,6 +20,7 @@ final class PendingPostQueue {
     private PendingPost head;
     private PendingPost tail;
 
+    //新的事件放到消息的尾部
     synchronized void enqueue(PendingPost pendingPost) {
         if (pendingPost == null) {
             throw new NullPointerException("null cannot be enqueued");
@@ -34,7 +35,7 @@ final class PendingPostQueue {
         }
         notifyAll();
     }
-
+    //从队列的头部获取消息
     synchronized PendingPost poll() {
         PendingPost pendingPost = head;
         if (head != null) {

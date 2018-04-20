@@ -23,10 +23,11 @@ import java.util.logging.Level;
  * @author Markus
  */
 final class BackgroundPoster implements Runnable, Poster {
-
+    //队列
     private final PendingPostQueue queue;
     private final EventBus eventBus;
-
+    //保证只有上个事件处理完，线程池才会处理下个事件，BackgroundPoster是后台执行事件，但是事件是顺序执行的。
+    //和AsyncPoster相对比，AsyncPoster会并发执行所有事件
     private volatile boolean executorRunning;
 
     BackgroundPoster(EventBus eventBus) {
@@ -40,6 +41,7 @@ final class BackgroundPoster implements Runnable, Poster {
             queue.enqueue(pendingPost);
             if (!executorRunning) {
                 executorRunning = true;
+                //线程池执行
                 eventBus.getExecutorService().execute(this);
             }
         }

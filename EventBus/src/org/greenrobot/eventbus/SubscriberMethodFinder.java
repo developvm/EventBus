@@ -26,6 +26,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 用来查找和缓存订阅者响应函数的信息的类
+ */
 class SubscriberMethodFinder {
     /*
      * In newer class files, compilers may add methods. Those are called bridge or synthetic methods.
@@ -36,13 +39,15 @@ class SubscriberMethodFinder {
     private static final int SYNTHETIC = 0x1000;
 
     private static final int MODIFIERS_IGNORE = Modifier.ABSTRACT | Modifier.STATIC | BRIDGE | SYNTHETIC;
+    //缓存订阅者相应函数
     private static final Map<Class<?>, List<SubscriberMethod>> METHOD_CACHE = new ConcurrentHashMap<>();
 
     private List<SubscriberInfoIndex> subscriberInfoIndexes;
     private final boolean strictMethodVerification;
-    private final boolean ignoreGeneratedIndex;
+    private final boolean ignoreGeneratedIndex;//忽略注解器生成的MyEventBusIndex类，通过反射获取订阅方法信息
 
     private static final int POOL_SIZE = 4;
+    //做订阅方法的校验和保存,并通过FIND_STATE_POOL静态数组来保存FindState对象,可以使FindState复用,避免重复创建过多的对象
     private static final FindState[] FIND_STATE_POOL = new FindState[POOL_SIZE];
 
     SubscriberMethodFinder(List<SubscriberInfoIndex> subscriberInfoIndexes, boolean strictMethodVerification,
@@ -54,15 +59,19 @@ class SubscriberMethodFinder {
 
     List<SubscriberMethod> findSubscriberMethods(Class<?> subscriberClass) {
         List<SubscriberMethod> subscriberMethods = METHOD_CACHE.get(subscriberClass);
+        //如果订阅者已经在缓存里，直接返回
         if (subscriberMethods != null) {
             return subscriberMethods;
         }
-
+        //是否忽略注解器生成的MyEventBusIndex类
         if (ignoreGeneratedIndex) {
+            //利用反射来读取订阅类中的订阅方法信息
             subscriberMethods = findUsingReflection(subscriberClass);
         } else {
+            //从注解器生成的MyEventBusIndex类中获得订阅类的订阅方法信息
             subscriberMethods = findUsingInfo(subscriberClass);
         }
+        //register所在的类或超类里必须要有处理事件的方法，要不然再次注册的时候会抛异常
         if (subscriberMethods.isEmpty()) {
             throw new EventBusException("Subscriber " + subscriberClass
                     + " and its super classes have no public methods with the @Subscribe annotation");

@@ -40,16 +40,25 @@ public class EventBus {
 
     /** Log tag, apps may override it. */
     public static String TAG = "EventBus";
-
+    //EventBus既可以通过单例获取，也可以通过new获取一个对象，两个的数据互不影响
     static volatile EventBus defaultInstance;
-
+    //配置类，配置项都放在这个类里，有个默认值，可以修改。可以考虑以后写代码的时候加个配置配置类，方便管理
     private static final EventBusBuilder DEFAULT_BUILDER = new EventBusBuilder();
+    //缓存事件，事件的父类的所有事件。EventBus支持事件类型的继承：比如事件类型A继承事件类型B，
+    // 如果发布了事件A，所有注册事件B的订阅者也会得到处理。
     private static final Map<Class<?>, List<Class<?>>> eventTypesCache = new HashMap<>();
-
+    //key:订阅的事件,value:订阅这个事件的所有订阅者集合
     private final Map<Class<?>, CopyOnWriteArrayList<Subscription>> subscriptionsByEventType;
+    //key:订阅者对象,value:这个订阅者订阅的事件集合
     private final Map<Object, List<Class<?>>> typesBySubscriber;
+    //粘性事件，就是指订阅者注册事件后，会发送一次最近发生的事件。所以，这个类用来保存发送的粘性事件
+    //key:粘性事件的class对象, value:事件对象
     private final Map<Class<?>, Object> stickyEvents;
-
+    /**
+     * ThreadLocal 是一个线程内部的数据存储类，通过它可以在指定的线程中存储数据，而这段数据是不会与其他线程共享的。
+     * 其内部原理是通过生成一个它包裹的泛型对象的数组，在不同的线程会有不同的数组索引值，通过这样就可以做到每个线程通过 get() 方法获取的时候，取到的只能是自己线程所对应的数据。
+     在 EventBus 中， ThreadLocal 所包裹的是一个 PostingThreadState 类，它仅仅是封装了一些事件发送中过程所需的数据。
+     */
     private final ThreadLocal<PostingThreadState> currentPostingThreadState = new ThreadLocal<PostingThreadState>() {
         @Override
         protected PostingThreadState initialValue() {
@@ -57,13 +66,20 @@ public class EventBus {
         }
     };
 
+    //Eventbus支持Android和Java，这个在Android中，用来标记Android的UI线程
     // @Nullable
     private final MainThreadSupport mainThreadSupport;
     // @Nullable
+    //主线程post，获取主线程的loop，通过handler执行
     private final Poster mainThreadPoster;
+    //事件 Background 处理，通过Executors.newCachedThreadPool()一个事件一个事件执行。
     private final BackgroundPoster backgroundPoster;
+    //事件异步处理
     private final AsyncPoster asyncPoster;
+    //订阅者响应函数信息存储和查找类
     private final SubscriberMethodFinder subscriberMethodFinder;
+    //ExecutorService是Executor直接的扩展接口，也是最常用的线程池接口
+    //默认的值为Executors.newCachedThreadPool()
     private final ExecutorService executorService;
 
     private final boolean throwSubscriberException;
@@ -114,10 +130,15 @@ public class EventBus {
         typesBySubscriber = new HashMap<>();
         stickyEvents = new ConcurrentHashMap<>();
         mainThreadSupport = builder.getMainThreadSupport();
+        //事件主线程处理，获取主线程的loop，通过handler执行
         mainThreadPoster = mainThreadSupport != null ? mainThreadSupport.createPoster(this) : null;
+        //事件 Background 处理，通过Executors.newCachedThreadPool()一个事件一个时间执行。
         backgroundPoster = new BackgroundPoster(this);
+        //事件异步线程处理，通过Executors.newCachedThreadPool()
         asyncPoster = new AsyncPoster(this);
+
         indexCount = builder.subscriberInfoIndexes != null ? builder.subscriberInfoIndexes.size() : 0;
+        //订阅者响应函数信息存储和查找类
         subscriberMethodFinder = new SubscriberMethodFinder(builder.subscriberInfoIndexes,
                 builder.strictMethodVerification, builder.ignoreGeneratedIndex);
         logSubscriberExceptions = builder.logSubscriberExceptions;
@@ -125,6 +146,7 @@ public class EventBus {
         sendSubscriberExceptionEvent = builder.sendSubscriberExceptionEvent;
         sendNoSubscriberEvent = builder.sendNoSubscriberEvent;
         throwSubscriberException = builder.throwSubscriberException;
+        //是否支持事件继承
         eventInheritance = builder.eventInheritance;
         executorService = builder.executorService;
     }
@@ -138,7 +160,11 @@ public class EventBus {
      * ThreadMode} and priority.
      */
     public void register(Object subscriber) {
+        //首先获得订阅者的class对象
         Class<?> subscriberClass = subscriber.getClass();
+        //通过subscriberMethodFinder来找到订阅者订阅了哪些事件.返回一个SubscriberMethod对象的List,SubscriberMethod
+        //里包含了这个方法的Method对象,以及将来响应订阅是在哪个线程的ThreadMode,以及订阅的事件类型eventType,以及订阅的优
+        //先级priority,以及是否接收粘性sticky事件的boolean值.
         List<SubscriberMethod> subscriberMethods = subscriberMethodFinder.findSubscriberMethods(subscriberClass);
         synchronized (this) {
             for (SubscriberMethod subscriberMethod : subscriberMethods) {
@@ -147,15 +173,21 @@ public class EventBus {
         }
     }
 
-    // Must be called in synchronized block
+    // Must be called in synchronized block, 这里涉及到把数据增加到对应的集合，所以要同步
     private void subscribe(Object subscriber, SubscriberMethod subscriberMethod) {
         Class<?> eventType = subscriberMethod.eventType;
+        //订阅者的相关描述
         Subscription newSubscription = new Subscription(subscriber, subscriberMethod);
+        //CopyOnWrite容器即写时复制的容器。通俗的理解是当我们往一个容器添加元素的时候，不直接往当前容器添加，
+        // 而是先将当前容器进行Copy，复制出一个新的容器，然后新的容器里添加元素，添加完元素之后，
+        // 再将原容器的引用指向新的容器。这样做的好处是我们可以对CopyOnWrite容器进行并发的读，而不需要加锁，
+        // 因为当前容器不会添加任何元素。所以CopyOnWrite容器也是一种读写分离的思想，读和写不同的容器。
         CopyOnWriteArrayList<Subscription> subscriptions = subscriptionsByEventType.get(eventType);
         if (subscriptions == null) {
             subscriptions = new CopyOnWriteArrayList<>();
             subscriptionsByEventType.put(eventType, subscriptions);
         } else {
+            //如果已经注册过，再次注册就会抛异常，所以注册之前要看一下是否已经注册过
             if (subscriptions.contains(newSubscription)) {
                 throw new EventBusException("Subscriber " + subscriber.getClass() + " already registered to event "
                         + eventType);
@@ -164,6 +196,7 @@ public class EventBus {
 
         int size = subscriptions.size();
         for (int i = 0; i <= size; i++) {
+            //同一个事件，优先级高的订阅者放在前面
             if (i == size || subscriberMethod.priority > subscriptions.get(i).subscriberMethod.priority) {
                 subscriptions.add(i, newSubscription);
                 break;
@@ -177,6 +210,7 @@ public class EventBus {
         }
         subscribedEvents.add(eventType);
 
+        //对于粘性事件，在注册后，会再发布最后一次post的事件
         if (subscriberMethod.sticky) {
             if (eventInheritance) {
                 // Existing sticky events of all subclasses of eventType have to be considered.
@@ -248,11 +282,14 @@ public class EventBus {
         } else {
             logger.log(Level.WARNING, "Subscriber to unregister was not registered before: " + subscriber.getClass());
         }
-    }
+}
 
     /** Posts the given event to the event bus. */
     public void post(Object event) {
+        //获取当前线程post的一个状态
         PostingThreadState postingState = currentPostingThreadState.get();
+        //当前线程维护一个list，每次post被调用后，都会把事件先放入post，一旦开始处理list，
+        //会把list的所有事件循环处理完。
         List<Object> eventQueue = postingState.eventQueue;
         eventQueue.add(event);
 
@@ -263,6 +300,7 @@ public class EventBus {
                 throw new EventBusException("Internal error. Abort state was not reset");
             }
             try {
+                //循环处理
                 while (!eventQueue.isEmpty()) {
                     postSingleEvent(eventQueue.remove(0), postingState);
                 }
@@ -378,7 +416,9 @@ public class EventBus {
     private void postSingleEvent(Object event, PostingThreadState postingState) throws Error {
         Class<?> eventClass = event.getClass();
         boolean subscriptionFound = false;
+        //如果消息可继承，
         if (eventInheritance) {
+            //获取事件相关的所有事件
             List<Class<?>> eventTypes = lookupAllEventTypes(eventClass);
             int countTypes = eventTypes.size();
             for (int h = 0; h < countTypes; h++) {
@@ -402,9 +442,11 @@ public class EventBus {
     private boolean postSingleEventForEventType(Object event, PostingThreadState postingState, Class<?> eventClass) {
         CopyOnWriteArrayList<Subscription> subscriptions;
         synchronized (this) {
+            //获取事件的所有订阅者
             subscriptions = subscriptionsByEventType.get(eventClass);
         }
         if (subscriptions != null && !subscriptions.isEmpty()) {
+            //循环处理订阅者
             for (Subscription subscription : subscriptions) {
                 postingState.event = event;
                 postingState.subscription = subscription;
@@ -540,7 +582,11 @@ public class EventBus {
         }
     }
 
-    /** For ThreadLocal, much faster to set (and get multiple values). */
+    /**
+     * For ThreadLocal, much faster to set (and get multiple values).
+     * 标记当前线程的状态，
+     *
+     * */
     final static class PostingThreadState {
         final List<Object> eventQueue = new ArrayList<>();
         boolean isPosting;

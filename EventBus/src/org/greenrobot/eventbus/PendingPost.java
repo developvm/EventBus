@@ -19,17 +19,24 @@ import java.util.ArrayList;
 import java.util.List;
 
 final class PendingPost {
+    //为了避免对象的重复创建，这个集合放置已经处理过的PendingPost
     private final static List<PendingPost> pendingPostPool = new ArrayList<PendingPost>();
 
     Object event;
     Subscription subscription;
-    PendingPost next;
+    PendingPost next;//每个对象指向下一个，形成链表
 
     private PendingPost(Object event, Subscription subscription) {
         this.event = event;
         this.subscription = subscription;
     }
 
+    /**
+     * 获取一个PendingPost，如果pendingPostPool里面有，就取一个，没有创建
+     * @param subscription
+     * @param event
+     * @return
+     */
     static PendingPost obtainPendingPost(Subscription subscription, Object event) {
         synchronized (pendingPostPool) {
             int size = pendingPostPool.size();
@@ -44,6 +51,10 @@ final class PendingPost {
         return new PendingPost(event, subscription);
     }
 
+    /**
+     * 释放PendingPost，并把释放的PendingPost加入到pendingPostPool
+     * @param pendingPost
+     */
     static void releasePendingPost(PendingPost pendingPost) {
         pendingPost.event = null;
         pendingPost.subscription = null;

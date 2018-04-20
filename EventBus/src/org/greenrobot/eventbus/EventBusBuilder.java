@@ -28,18 +28,19 @@ import java.util.concurrent.Executors;
 /**
  * Creates EventBus instances with custom parameters and also allows to install a custom default EventBus instance.
  * Create a new builder using {@link EventBus#builder()}.
+ * 通过初始化了一个EventBusBuilder()对象来分别初始化EventBus的一些配置,当我们在写一个需要自定义配置的框架的时候,这种实现方法非常普遍,将配置解耦出去,使我们的代码结构更清晰
  */
 public class EventBusBuilder {
     private final static ExecutorService DEFAULT_EXECUTOR_SERVICE = Executors.newCachedThreadPool();
 
-    boolean logSubscriberExceptions = true;
-    boolean logNoSubscriberMessages = true;
-    boolean sendSubscriberExceptionEvent = true;
-    boolean sendNoSubscriberEvent = true;
-    boolean throwSubscriberException;
-    boolean eventInheritance = true;
-    boolean ignoreGeneratedIndex;
-    boolean strictMethodVerification;
+    boolean logSubscriberExceptions = true;//监听异常日志
+    boolean logNoSubscriberMessages = true;//如果没有订阅者，显示一个log
+    boolean sendSubscriberExceptionEvent = true;//发送监听到异常事件
+    boolean sendNoSubscriberEvent = true;//如果没有订阅者，发送一条默认事件
+    boolean throwSubscriberException;//如果失败，抛出异常
+    boolean eventInheritance = true;//event的子类是否也能响应订阅者
+    boolean ignoreGeneratedIndex;//是否生成的文件，每次都通过发射
+    boolean strictMethodVerification;//是否严格验证事件的处理方法
     ExecutorService executorService = DEFAULT_EXECUTOR_SERVICE;
     List<Class<?>> skipMethodVerificationForClasses;
     List<SubscriberInfoIndex> subscriberInfoIndexes;
